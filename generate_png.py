@@ -5,6 +5,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageTk, ImageFont
 import subprocess
 import sys
+from apiinference import generate_ui_code
 import json
 from layout_flow import build_layout
 # Higher default scaling so the UI is crisp/readable on high-DPI displays.
@@ -36,7 +37,7 @@ class MiniPaint(ctk.CTk):
         self.mode = "draw"  # draw | erase | text | line | rectangle | ellipse
         self.shape_start = None
         self.preview_shape_id = None
-
+        self.generated_code = {}
         # Fonts
         self.font_large = ctk.CTkFont(size=18, weight="bold")
         self.font_medium = ctk.CTkFont(size=16)
@@ -51,10 +52,14 @@ class MiniPaint(ctk.CTk):
             "ellipse": "⬭ Ellipse",
         }
         self.display_to_mode = {label: mode for mode, label in self.mode_labels.items()}
-        self.quick_colors = [
-            "#000000", "#3b82f6", "#ef4444", "#f97316",
-            "#22c55e", "#eab308", "#a855f7", "#ffffff"
-        ]
+        self.palettes = {
+            "Bright": ["#0f172a", "#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#10b981", "#6366f1", "#f3f4f6"],
+            "Calm": ["#0b1b28", "#1f2937", "#2563eb", "#22d3ee", "#14b8a6", "#94a3b8", "#e2e8f0", "#f8fafc"],
+            "Warm": ["#1c1917", "#be123c", "#f97316", "#f59e0b", "#fbbf24", "#92400e", "#78350f", "#f5f5f4"],
+        }
+        self.current_palette_name = "Bright"
+        self.quick_colors = self.palettes[self.current_palette_name]
+        self.palette_buttons = []
 
         # Paths
         self.images_dir = Path(__file__).resolve().parent / "images"
@@ -119,16 +124,19 @@ class MiniPaint(ctk.CTk):
                       command=self.pick_color,
                       font=self.font_medium).pack(side="left")
 
-        palette_frame = ctk.CTkFrame(color_frame, fg_color="transparent")
-        palette_frame.pack(side="left", padx=(10, 0))
+        self.palette_selector = ctk.CTkOptionMenu(
+            color_frame,
+            values=list(self.palettes.keys()),
+            command=self.select_palette,
+            width=160,
+            font=self.font_medium
+        )
+        self.palette_selector.set(self.current_palette_name)
+        self.palette_selector.pack(side="left", padx=(12, 6))
 
-        for color in self.quick_colors:
-            ctk.CTkButton(
-                palette_frame, text="", width=26, height=26,
-                fg_color=color, hover_color=color,
-                border_color="#d1d5db", border_width=1,
-                command=lambda c=color: self.set_color(c)
-            ).pack(side="left", padx=3)
+        self.palette_frame = ctk.CTkFrame(color_frame, fg_color="transparent")
+        self.palette_frame.pack(side="left", padx=(10, 0))
+        self.build_palette_buttons(self.palette_frame)
 
         # Tool + options
         tool_frame = ctk.CTkFrame(toolbar, fg_color="transparent")
@@ -279,6 +287,30 @@ class MiniPaint(ctk.CTk):
         color = colorchooser.askcolor()[1]
         if color:
             self.set_color(color)
+
+    def select_palette(self, palette_name):
+        if palette_name not in self.palettes:
+            return
+        self.current_palette_name = palette_name
+        self.quick_colors = self.palettes[palette_name]
+        if self.quick_colors:
+            self.set_color(self.quick_colors[0])
+        self.build_palette_buttons(self.palette_frame)
+        self.refresh_status(f"Palette: {palette_name}")
+
+    def build_palette_buttons(self, parent):
+        for btn in getattr(self, "palette_buttons", []):
+            btn.destroy()
+        self.palette_buttons = []
+        for color in self.quick_colors:
+            btn = ctk.CTkButton(
+                parent, text="", width=26, height=26,
+                fg_color=color, hover_color=color,
+                border_color="#d1d5db", border_width=1,
+                command=lambda c=color: self.set_color(c)
+            )
+            btn.pack(side="left", padx=3)
+            self.palette_buttons.append(btn)
 
     def set_color(self, color):
         self.current_color = color
@@ -548,57 +580,152 @@ class MiniPaint(ctk.CTk):
         saved_path = str(file_path.resolve())
         self.refresh_status(f"Saved: {saved_path}")
         print(f"[✔] Saved: {saved_path}")
-        def main():
-            count = 0
-            print(filename)
-            image_path = filename
-            image_name = image_path
-            os.chdir("/mnt/windows/Users/Admin/Desktop/All/Not_College/Codes/MachineLearning/Sketch-To-Website/")
-            image_path = "./images/"+image_path
-            while(image_path!="exit.png"):
-                if(count == 0):
-                    count+=1
-                else:
-                    image_path = input("Filename is : ")
-                
-                print("Editing ",image_path)
-                layout = build_layout(image_path)
 
-                layout_path = Path("layout_output.json")
-                layout_path.write_text(json.dumps(layout, indent=2))
-                print(f"Layout JSON written to {layout_path}")
-
-                try:
-                    # code = generate_ui_code(layout_path.read_text())
-                    code = "testingthisbitchlikethe1980s"
-                    path = "./websiteTemp/app"
-                    print(1)
-                    if(os.path.isdir(f"{path}/{image_path[:-4]}")):
-                        print(2)
-                        Path(f"{path}/{image_path[:-4]}/page.tsx").write_text(code[6:-3])
-                    else:
-                        print(3)
-                        os.mkdir(f"./websiteTemp/app/{image_name[:-4]}")
-                        Path(f"{path}/{image_name[:-4]}/page.tsx").write_text(code[6:-3])
-
-                    print("Generated UI written to generated_ui.jsx")
-                except Exception as exc:
-                    print(f"Model invocation failed: {exc}")
-
-        main()
-        # if self.save_counter == 1:
-        #     # First launch → open terminal with tmux session
-        #     subprocess.Popen([
-        #         "gnome-terminal", "--", "tmux", "new", "-s", "layout_session",
-        #         "python3", "layout_flow.py"
-        #     ])
+        print(filename)
+        image_path = filename
+        image_name = image_path
+        os.chdir("/mnt/windows/Users/Admin/Desktop/All/Not_College/Codes/MachineLearning/Sketch-To-Website/")
+        image_path = "./images/"+image_path
         
-        # self.save_counter += 1
-        # # Send filename to existing terminal session
-        # subprocess.run(["tmux", "send-keys", "-t", "layout_session", filename, "Enter"])
+        print("Editing ",image_path)
+        layout = build_layout(image_path)
+
+        layout_path = Path("layout_output.json")
+        history = {}
+        if layout_path.exists():
+            try:
+                existing = json.loads(layout_path.read_text())
+                if isinstance(existing, dict) and "elements" in existing:
+                    pass  # old single-layout format; ignore to keep current logic safe
+                elif isinstance(existing, dict):
+                    history = existing
+            except Exception:
+                pass
+        
+        history[filename] = layout
+        full_layout_json = json.dumps(history, indent=2)
+        layout_path.write_text(full_layout_json)
+        print(f"Layout JSON written to {layout_path}")
+
+        try:
+            code, context = generate_ui_code(
+                full_layout_json,
+                filename=f"{filename[:4]}/page.tsx",
+                components=self.generated_code,
+                palette=self.palettes.get(self.current_palette_name)
+            )
+            layout["page_context"] = context
+            history[filename] = layout
+            layout_path.write_text(json.dumps(history, indent=2))
+            self.generated_code[filename] = code
+
+            path = "./websiteTemp/app"
+
+            # extract only filename without extension
+            folder = image_name.rsplit(".",1)[0]
+            output_dir = f"{path}/{folder}"
+
+            print(1)
+
+            # Create directory if not present (no crash)
+            os.makedirs(output_dir, exist_ok=True)
+
+            # Always rewrite safely
+            Path(f"{output_dir}/page.tsx").write_text(code)
+
+            print("Generated UI written successfully.")
+
+        except Exception as exc:
+            print(f"Model invocation failed: {exc}")
+
+def ensure_package_manager_is_npm(project_root: Path):
+    """Force packageManager to npm so shadcn uses npm instead of bun."""
+    pkg_path = project_root / "package.json"
+    if not pkg_path.exists():
+        print(f"[!] package.json not found under {project_root}. Skipping shadcn setup.")
+        return
+    try:
+        data = json.loads(pkg_path.read_text())
+    except Exception as exc:
+        print(f"[!] Could not read package.json: {exc}")
+        return
+    if "packageManager" not in data:
+        npm_version = subprocess.run(["npm", "-v"], capture_output=True, text=True)
+        version_str = (npm_version.stdout or "").strip() or "latest"
+        data["packageManager"] = f"npm@{version_str}"
+        pkg_path.write_text(json.dumps(data, indent=2))
+        print(f"[✔] Set packageManager to npm@{version_str}")
+
+
+def ensure_shadcn_setup(project_root: Path):
+    """Initialize shadcn/ui once using npm (creates components.json)."""
+    components_config = project_root / "components.json"
+    ensure_package_manager_is_npm(project_root)
+    if not components_config.exists():
+        print("[*] Initializing shadcn/ui with npm...")
+        try:
+            subprocess.run(
+                ["npx", "--yes", "shadcn@latest", "init", "--package-manager", "npm", "--skip-install"],
+                cwd=project_root,
+                check=False,
+            )
+        except FileNotFoundError:
+            print("[!] npm or npx not found; cannot initialize shadcn/ui.")
+            return
+    # Add a few core components up front to avoid repeated prompts.
+    basic_components = [
+        "button",
+        "input",
+        "card",
+        "textarea",
+        "dialog",
+        "dropdown-menu",
+        "navigation-menu",
+        "separator",
+        "label",
+        "checkbox",
+    ]
+    try:
+        subprocess.run(
+            ["npx", "--yes", "shadcn@latest", "add", *basic_components, "--package-manager", "npm", "--skip-install"],
+            cwd=project_root,
+            check=False,
+        )
+    except FileNotFoundError:
+        print("[!] npm or npx not found; cannot add shadcn/ui components.")
+
+
+def ensure_tsconfig_aliases(project_root: Path):
+    """Make sure tsconfig.json has @/* and ~/* pointing to project root."""
+    ts_path = project_root / "tsconfig.json"
+    if not ts_path.exists():
+        print(f"[!] tsconfig.json not found under {project_root}, skipping alias setup.")
+        return
+    try:
+        data = json.loads(ts_path.read_text())
+    except Exception as exc:
+        print(f"[!] Could not read tsconfig.json: {exc}")
+        return
+
+    compiler = data.setdefault("compilerOptions", {})
+    paths = compiler.setdefault("paths", {})
+    desired = {"@/*": ["./*"], "~/*": ["./*"]}
+
+    changed = False
+    for alias, target in desired.items():
+        if paths.get(alias) != target:
+            paths[alias] = target
+            changed = True
+
+    if changed:
+        ts_path.write_text(json.dumps(data, indent=2))
+        print("[✔] Ensured tsconfig path aliases for @/* and ~/*")
 
 import shutil
 if __name__ == "__main__":
+    project_root = Path(__file__).resolve().parent / "websiteTemp"
+    ensure_tsconfig_aliases(project_root)
+    ensure_shadcn_setup(project_root)
 
     # Create React APP
     if(os.path.isdir("./websiteTemp")):
@@ -621,6 +748,14 @@ if __name__ == "__main__":
     os.chdir(path)
 
     subprocess.run(["npx",'-y',"degit","rajput-hemant/nextjs-template myapp"])
+    subprocess.run(["npm","i"])
+    subprocess.run(['npm','install','@mantine/core','@mantine/hooks',' @nextui-org/react','flowbite-react','daisyui','@headlessui/react'])
+    
+    # subprocess.run(['npm','run','dev'])
+    subprocess.run(['npm','install','tw-animate-css'])
+
+
+
 
     app = MiniPaint()
     app.mainloop()

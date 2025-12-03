@@ -8,6 +8,7 @@ import sys
 from apiinference import generate_ui_code
 import json
 from layout_flow import build_layout
+import re
 # Higher default scaling so the UI is crisp/readable on high-DPI displays.
 UI_SCALE = float(os.environ.get("MINIPAINT_UI_SCALE", 1.3))
 
@@ -200,6 +201,10 @@ class MiniPaint(ctk.CTk):
         ctk.CTkButton(actions, text="🗑 Clear", fg_color="#ef4444",
                       hover_color="#dc2626", width=90,
                       command=self.clear_canvas,
+                      font=self.font_medium).pack(side="right", padx=6)
+        ctk.CTkButton(actions, text="🚀 Deploy", fg_color="#0ea5e9",
+                      hover_color="#0284c7", width=120,
+                      command=self.deploy_site,
                       font=self.font_medium).pack(side="right", padx=6)
         ctk.CTkButton(actions, text="📸 Save PNG", fg_color="#22c55e",
                       hover_color="#16a34a", width=120,
@@ -610,7 +615,7 @@ class MiniPaint(ctk.CTk):
         try:
             code, context = generate_ui_code(
                 full_layout_json,
-                filename=f"{filename[:4]}/page.tsx",
+                filename=filename,
                 components=self.generated_code,
                 palette=self.palettes.get(self.current_palette_name)
             )
@@ -637,6 +642,13 @@ class MiniPaint(ctk.CTk):
 
         except Exception as exc:
             print(f"Model invocation failed: {exc}")
+
+    # ----------------------
+    # DEPLOY PLACEHOLDER
+    # ----------------------
+    def deploy_site(self):
+        # Placeholder: hook up actual deploy logic (e.g., Vercel CLI) here.
+        self.refresh_status("Deploy triggered (not implemented yet)")
 
 def ensure_package_manager_is_npm(project_root: Path):
     """Force packageManager to npm so shadcn uses npm instead of bun."""
@@ -665,7 +677,8 @@ def ensure_shadcn_setup(project_root: Path):
         print("[*] Initializing shadcn/ui with npm...")
         try:
             subprocess.run(
-                ["npx", "--yes", "shadcn@latest", "init", "--package-manager", "npm", "--skip-install"],
+                # Some shadcn versions reject --package-manager; rely on packageManager in package.json instead.
+                ["npx", "--yes", "shadcn@latest", "init"],
                 cwd=project_root,
                 check=False,
             )
@@ -684,10 +697,12 @@ def ensure_shadcn_setup(project_root: Path):
         "separator",
         "label",
         "checkbox",
+        "sheet",
+        "avatar"
     ]
     try:
         subprocess.run(
-            ["npx", "--yes", "shadcn@latest", "add", *basic_components, "--package-manager", "npm", "--skip-install"],
+            ["npx", "--yes", "shadcn@latest", "add", *basic_components],
             cwd=project_root,
             check=False,
         )
@@ -697,65 +712,59 @@ def ensure_shadcn_setup(project_root: Path):
 
 def ensure_tsconfig_aliases(project_root: Path):
     """Make sure tsconfig.json has @/* and ~/* pointing to project root."""
-    ts_path = project_root / "tsconfig.json"
+    ts_path = project_root / "websiteTemp/tsconfig.json"
     if not ts_path.exists():
         print(f"[!] tsconfig.json not found under {project_root}, skipping alias setup.")
         return
-    try:
-        data = json.loads(ts_path.read_text())
-    except Exception as exc:
-        print(f"[!] Could not read tsconfig.json: {exc}")
-        return
+    raw = ts_path.read_text()
+    # Strip /* ... */ and // ... comments to parse as JSON
+    data = raw.replace('"~/*": ["./*"]','"~/*": ["./*"],"@/*": ["./*"]')
+    ts_path.write_text(data)
+    # compiler = data.setdefault("compilerOptions", {})
+    # paths = compiler.setdefault("paths", {})
+    # desired = {"@/*": ["./*"], "~/*": ["./*"]}
 
-    compiler = data.setdefault("compilerOptions", {})
-    paths = compiler.setdefault("paths", {})
-    desired = {"@/*": ["./*"], "~/*": ["./*"]}
-
-    changed = False
-    for alias, target in desired.items():
-        if paths.get(alias) != target:
-            paths[alias] = target
-            changed = True
-
-    if changed:
-        ts_path.write_text(json.dumps(data, indent=2))
-        print("[✔] Ensured tsconfig path aliases for @/* and ~/*")
+    # changed = False
+    # for alias, target in desired.items():
+    #     if paths.get(alias) != target:
+    #         paths[alias] = target
+    #         changed = True
+    print("replaced")
+    # if changed:
+    #     ts_path.write_text(json.dumps(data, indent=2))
+    #     print("[✔] Ensured tsconfig path aliases for @/* and ~/*")
 
 import shutil
 if __name__ == "__main__":
-    project_root = Path(__file__).resolve().parent / "websiteTemp"
-    ensure_tsconfig_aliases(project_root)
-    ensure_shadcn_setup(project_root)
 
-    # Create React APP
-    if(os.path.isdir("./websiteTemp")):
-        pass
-    else:
-        os.mkdir("./websiteTemp")
-    folder = './websiteTemp'
-    for filename in os.listdir(folder):
-        file_path = os.path.join(folder, filename)
-        try:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
-                os.unlink(file_path)
-            elif os.path.isdir(file_path):
-                shutil.rmtree(file_path)
-        except Exception as e:
-            print('Failed to delete %s. Reason: %s' % (file_path, e))
+    if(len(sys.argv) > 1) and sys.argv[1] == '--fresh':
+        # Create / reset project
+        if not os.path.isdir("./websiteTemp"):
+            os.mkdir("./websiteTemp")
+        folder = './websiteTemp'
+        for filename in os.listdir(folder):
+            file_path = os.path.join(folder, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print('Failed to delete %s. Reason: %s' % (file_path, e))
 
-    path = "./websiteTemp"
+        path = "./websiteTemp"
+        os.chdir(path)
 
-    os.chdir(path)
-
-    subprocess.run(["npx",'-y',"degit","rajput-hemant/nextjs-template myapp"])
-    subprocess.run(["npm","i"])
-    subprocess.run(['npm','install','@mantine/core','@mantine/hooks',' @nextui-org/react','flowbite-react','daisyui','@headlessui/react'])
-    
-    # subprocess.run(['npm','run','dev'])
-    subprocess.run(['npm','install','tw-animate-css'])
-
-
+        subprocess.run(["npx", '-y', "degit", "rajput-hemant/nextjs-template"])
+        subprocess.run(["npm", "i"])
+        subprocess.run(['npm', 'install', '@mantine/core', '@mantine/hooks', '@nextui-org/react', 'flowbite-react', 'daisyui', '@headlessui/react'])
+        subprocess.run(['npm', 'install', 'tw-animate-css'])
+        project_root = Path.cwd()
+        ensure_tsconfig_aliases(project_root)
+        ensure_shadcn_setup(project_root)
 
 
     app = MiniPaint()
     app.mainloop()
+
+    

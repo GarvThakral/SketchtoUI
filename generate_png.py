@@ -50,6 +50,7 @@ class MiniPaint(ctk.CTk):
             "text": "🔤 Text",
             "line": "〰️ Line",
             "rectangle": "▭ Rectangle",
+            "rounded_rectangle": "▭ Rounded Rect",
             "ellipse": "⬭ Ellipse",
         }
         self.display_to_mode = {label: mode for mode, label in self.mode_labels.items()}
@@ -441,7 +442,7 @@ class MiniPaint(ctk.CTk):
             self.add_text(event.x, event.y)
             return
 
-        if self.mode in {"line", "rectangle", "ellipse"}:
+        if self.mode in {"line", "rectangle", "rounded_rectangle", "ellipse"}:
             self.shape_start = (event.x, event.y)
             return
 
@@ -452,7 +453,7 @@ class MiniPaint(ctk.CTk):
         if self.mode == "text":
             return
 
-        if self.mode in {"line", "rectangle", "ellipse"}:
+        if self.mode in {"line", "rectangle", "rounded_rectangle", "ellipse"}:
             self.preview_shape(event.x, event.y)
             return
 
@@ -468,7 +469,7 @@ class MiniPaint(ctk.CTk):
         self.last_y = y
 
     def stop_draw(self, event):
-        if self.mode in {"line", "rectangle", "ellipse"}:
+        if self.mode in {"line", "rectangle", "rounded_rectangle", "ellipse"}:
             self.commit_shape(event.x, event.y)
             self.shape_start = None
             self.clear_preview_shape()
@@ -490,6 +491,14 @@ class MiniPaint(ctk.CTk):
                 x0, y0, x, y, fill=self.current_color, width=self.brush_size
             )
         elif self.mode == "rectangle":
+            self.preview_shape_id = self.canvas.create_rectangle(
+                x0, y0, x, y,
+                outline=self.current_color,
+                fill=fill,
+                width=self.brush_size
+            )
+        elif self.mode == "rounded_rectangle":
+            radius = max(2, min(abs(x - x0), abs(y - y0)) // 6)
             self.preview_shape_id = self.canvas.create_rectangle(
                 x0, y0, x, y,
                 outline=self.current_color,
@@ -526,6 +535,13 @@ class MiniPaint(ctk.CTk):
                                 outline=self.current_color,
                                 fill=fill,
                                 width=self.brush_size)
+        elif self.mode == "rounded_rectangle":
+            radius = max(2, min(abs(x - x0), abs(y - y0)) // 6)
+            self.draw.rounded_rectangle([x0, y0, x, y],
+                                        outline=self.current_color,
+                                        fill=fill,
+                                        width=self.brush_size,
+                                        radius=radius)
         elif self.mode == "ellipse":
             self.draw.ellipse([x0, y0, x, y],
                               outline=self.current_color,
@@ -613,7 +629,7 @@ class MiniPaint(ctk.CTk):
         print(f"Layout JSON written to {layout_path}")
 
         try:
-            code, context = generate_ui_code(
+            code_map, context = generate_ui_code(
                 full_layout_json,
                 filename=filename,
                 components=self.generated_code,
@@ -622,21 +638,21 @@ class MiniPaint(ctk.CTk):
             layout["page_context"] = context
             history[filename] = layout
             layout_path.write_text(json.dumps(history, indent=2))
-            self.generated_code[filename] = code
+            # Persist generated code map and write files
+            for fname, code in code_map.items():
+                self.generated_code[fname] = code
 
             path = "./websiteTemp/app"
 
-            # extract only filename without extension
-            folder = image_name.rsplit(".",1)[0]
-            output_dir = f"{path}/{folder}"
-
-            print(1)
-
-            # Create directory if not present (no crash)
-            os.makedirs(output_dir, exist_ok=True)
-
-            # Always rewrite safely
-            Path(f"{output_dir}/page.tsx").write_text(code)
+            for fname, code in code_map.items():
+                folder = fname.rsplit(".", 1)[0]
+                if(folder == 'landing'):
+                    output_dir = f"{path}"
+                    Path(f"{output_dir}/page.tsx").write_text(code)
+                else:
+                    output_dir = f"{path}/{folder}"
+                    os.makedirs(output_dir, exist_ok=True)
+                    Path(f"{output_dir}/page.tsx").write_text(code)
 
             print("Generated UI written successfully.")
 
